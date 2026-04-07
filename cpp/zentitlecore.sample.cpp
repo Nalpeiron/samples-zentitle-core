@@ -22,47 +22,15 @@ constexpr int kMaxFingerprintLength = 100;
 #if defined(_WIN32)
 using LibraryHandle = HMODULE;
 constexpr const char* kLibraryFileName = "Zentitle2Core.dll";
-#elif defined(__APPLE__) && defined(__aarch64__)
-using LibraryHandle = void*;
-constexpr const char* kLibraryFileName = "libZentitle2Core.dylib";
 #elif defined(__APPLE__)
 using LibraryHandle = void*;
 constexpr const char* kLibraryFileName = "libZentitle2Core.dylib";
-#elif defined(__linux__) && defined(__aarch64__)
-using LibraryHandle = void*;
-constexpr const char* kLibraryFileName = "libZentitle2Core.so";
-#elif defined(__linux__) && defined(__x86_64__)
+#elif defined(__linux__)
 using LibraryHandle = void*;
 constexpr const char* kLibraryFileName = "libZentitle2Core.so";
 #else
 #error "Unsupported platform"
 #endif
-
-bool isAlpineLinux()
-{
-#if defined(__linux__)
-    return std::filesystem::exists("/etc/alpine-release");
-#else
-    return false;
-#endif
-}
-
-const char* getPlatformFolder()
-{
-#if defined(_WIN32)
-    return "Windows_x86_64";
-#elif defined(__APPLE__) && defined(__aarch64__)
-    return "MacOS_arm64";
-#elif defined(__APPLE__)
-    return "MacOS_x86_64";
-#elif defined(__linux__) && defined(__aarch64__)
-    return isAlpineLinux() ? "Linux_alpine_aarch64" : "Linux_aarch64";
-#elif defined(__linux__) && defined(__x86_64__)
-    return isAlpineLinux() ? "Linux_alpine_x86_64" : "Linux_x86_64";
-#else
-#error "Unsupported platform"
-#endif
-}
 
 std::string getLastLibraryError()
 {
@@ -191,8 +159,7 @@ std::filesystem::path resolveLibraryPath(int argc, char* argv[])
         return std::filesystem::path(argv[1]);
     }
 
-    const std::filesystem::path defaultSdkRoot = std::filesystem::current_path() / "Zentitle2_SDK_v2.5.0";
-    return defaultSdkRoot / "Zentitle2Core" / getPlatformFolder() / kLibraryFileName;
+    return std::filesystem::absolute(argv[0]).parent_path() / kLibraryFileName;
 }
 }
 
@@ -205,7 +172,7 @@ int main(int argc, char* argv[])
         if (!std::filesystem::exists(libraryPath))
         {
             std::cerr << "Library not found: " << libraryPath << '\n';
-            std::cerr << "Pass the full path to the runtime library as the first argument if needed.\n";
+            std::cerr << "Place the runtime library next to the executable or pass its full path as the first argument.\n";
             return EXIT_FAILURE;
         }
 

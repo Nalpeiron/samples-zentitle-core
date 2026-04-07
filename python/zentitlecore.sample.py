@@ -26,8 +26,11 @@ def load_dynamic_library():
         library_path = os.path.join(here, default_library_name())
 
     if not os.path.exists(library_path):
-        print(f"Library not found: {library_path}")
-        print("Pass the full path to the runtime library as the first argument if needed.")
+        print(f"Library not found: {library_path}", file=sys.stderr)
+        print(
+            "Place the runtime library next to the script or pass its full path as the first argument.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     try:
@@ -57,15 +60,18 @@ fingerprint_length = c_int(MAX_FINGERPRINT_LENGTH)
 
 result = generate_default_device_fingerprint(device_fingerprint, byref(fingerprint_length))
 if not result:
-    print("generateDefaultDeviceFingerprint returned false")
+    print("generateDefaultDeviceFingerprint returned false", file=sys.stderr)
     sys.exit(1)
 
 if fingerprint_length.value < 0 or fingerprint_length.value > MAX_FINGERPRINT_LENGTH:
-    print(f"Invalid fingerprint length returned by library: {fingerprint_length.value}")
+    print(f"Invalid fingerprint length returned by library: {fingerprint_length.value}", file=sys.stderr)
     sys.exit(1)
 
 if device_fingerprint.raw[fingerprint_length.value] != 0:
-    print(f"Fingerprint buffer is missing a null terminator at index {fingerprint_length.value}")
+    print(
+        f"Fingerprint buffer is missing a null terminator at index {fingerprint_length.value}",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 print(f"Loaded library: {loaded_library_path}")

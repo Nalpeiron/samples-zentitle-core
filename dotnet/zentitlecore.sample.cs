@@ -26,6 +26,7 @@ internal static class Program
     if (!File.Exists(resolvedLibraryPath))
     {
       Console.Error.WriteLine($"Library not found: {resolvedLibraryPath}");
+      Console.Error.WriteLine("Place the runtime library next to the executable or pass its full path as the first argument.");
       return 1;
     }
 

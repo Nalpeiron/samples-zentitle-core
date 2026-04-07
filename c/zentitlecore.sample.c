@@ -1,3 +1,7 @@
+#if !defined(_WIN32)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,8 +19,11 @@
 #endif
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
 #else
 #include <dlfcn.h>
+#include <unistd.h>
 #endif
 
 #define MAX_PATH_LENGTH 1024
@@ -27,19 +34,11 @@
 typedef HMODULE LibraryHandle;
 #define PATH_SEPARATOR "\\"
 #define LIBRARY_FILE_NAME "Zentitle2Core.dll"
-#elif defined(__APPLE__) && defined(__aarch64__)
-typedef void* LibraryHandle;
-#define PATH_SEPARATOR "/"
-#define LIBRARY_FILE_NAME "libZentitle2Core.dylib"
 #elif defined(__APPLE__)
 typedef void* LibraryHandle;
 #define PATH_SEPARATOR "/"
 #define LIBRARY_FILE_NAME "libZentitle2Core.dylib"
-#elif defined(__linux__) && defined(__aarch64__)
-typedef void* LibraryHandle;
-#define PATH_SEPARATOR "/"
-#define LIBRARY_FILE_NAME "libZentitle2Core.so"
-#elif defined(__linux__) && defined(__x86_64__)
+#elif defined(__linux__)
 typedef void* LibraryHandle;
 #define PATH_SEPARATOR "/"
 #define LIBRARY_FILE_NAME "libZentitle2Core.so"
@@ -48,39 +47,6 @@ typedef void* LibraryHandle;
 #endif
 
 typedef bool (*GenerateDefaultDeviceFingerprintFn)(char*, int*);
-
-static bool is_alpine_linux(void)
-{
-#if defined(__linux__)
-    FILE* alpineRelease = fopen("/etc/alpine-release", "r");
-    if (alpineRelease == NULL)
-    {
-        return false;
-    }
-
-    fclose(alpineRelease);
-    return true;
-#else
-    return false;
-#endif
-}
-
-static const char* get_platform_folder(void)
-{
-#if defined(_WIN32)
-    return "Windows_x86_64";
-#elif defined(__APPLE__) && defined(__aarch64__)
-    return "MacOS_arm64";
-#elif defined(__APPLE__)
-    return "MacOS_x86_64";
-#elif defined(__linux__) && defined(__aarch64__)
-    return is_alpine_linux() ? "Linux_alpine_aarch64" : "Linux_aarch64";
-#elif defined(__linux__) && defined(__x86_64__)
-    return is_alpine_linux() ? "Linux_alpine_x86_64" : "Linux_x86_64";
-#else
-#error "Unsupported platform"
-#endif
-}
 
 static const char* get_last_library_error(void)
 {
@@ -184,18 +150,84 @@ static void close_dynamic_library(LibraryHandle libraryHandle)
 #endif
 }
 
+static bool get_executable_directory(char* output, size_t outputSize)
+{
+#if defined(_WIN32)
+    WCHAR widePath[MAX_PATH_LENGTH] = {0};
+    char executablePath[MAX_PATH_LENGTH] = {0};
+    const DWORD pathLength = GetModuleFileNameW(NULL, widePath, MAX_PATH_LENGTH);
+    const char* lastSeparator = NULL;
+    size_t directoryLength = 0;
+
+    if (pathLength == 0 || pathLength >= MAX_PATH_LENGTH)
+    {
+        return false;
+    }
+
+    if (WideCharToMultiByte(CP_UTF8, 0, widePath, -1, executablePath, MAX_PATH_LENGTH, NULL, NULL) <= 0)
+    {
+        return false;
+    }
+#elif defined(__APPLE__)
+    char executablePath[MAX_PATH_LENGTH] = {0};
+    uint32_t pathLength = (uint32_t)sizeof(executablePath);
+    const char* lastSeparator = NULL;
+    size_t directoryLength = 0;
+
+    if (_NSGetExecutablePath(executablePath, &pathLength) != 0)
+    {
+        return false;
+    }
+#else
+    char executablePath[MAX_PATH_LENGTH] = {0};
+    const ssize_t pathLength = readlink("/proc/self/exe", executablePath, sizeof(executablePath) - 1U);
+    const char* lastSeparator = NULL;
+    size_t directoryLength = 0;
+
+    if (pathLength <= 0)
+    {
+        return false;
+    }
+
+    executablePath[pathLength] = '\0';
+#endif
+
+    lastSeparator = strrchr(executablePath, PATH_SEPARATOR[0]);
+
+#if defined(_WIN32)
+    const char* alternateSeparator = strrchr(executablePath, '/');
+    if (alternateSeparator != NULL && (lastSeparator == NULL || alternateSeparator > lastSeparator))
+    {
+        lastSeparator = alternateSeparator;
+    }
+#endif
+
+    if (lastSeparator != NULL)
+    {
+        directoryLength = (size_t)(lastSeparator - executablePath) + 1U;
+    }
+
+    if (directoryLength == 0 || directoryLength >= outputSize)
+    {
+        return false;
+    }
+
+    memcpy(output, executablePath, directoryLength);
+    output[directoryLength] = '\0';
+    return true;
+}
+
 static bool build_default_library_path(char* output, size_t outputSize)
 {
-    const int written = snprintf(
-        output,
-        outputSize,
-        ".%sZentitle2_SDK_v2.5.0%sZentitle2Core%s%s%s",
-        PATH_SEPARATOR,
-        PATH_SEPARATOR,
-        PATH_SEPARATOR,
-        get_platform_folder(),
-        PATH_SEPARATOR LIBRARY_FILE_NAME);
+    char executableDirectory[MAX_PATH_LENGTH] = {0};
+    int written = 0;
 
+    if (!get_executable_directory(executableDirectory, sizeof(executableDirectory)))
+    {
+        return false;
+    }
+
+    written = snprintf(output, outputSize, "%s%s", executableDirectory, LIBRARY_FILE_NAME);
     return written > 0 && (size_t)written < outputSize;
 }
 
