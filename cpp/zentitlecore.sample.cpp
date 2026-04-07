@@ -158,10 +158,29 @@ public:
             throw std::runtime_error("Failed to load symbol: " + std::string(functionSymbol) + " (" + getLastLibraryError() + ")");
         }
 
-        return reinterpret_cast<FunctionType>(symbol);
+        return convertFunctionPointer<FunctionType>(symbol);
     }
 
 private:
+    template <typename FunctionType>
+    static FunctionType convertFunctionPointer(void* symbol)
+    {
+#if defined(_WIN32)
+        return reinterpret_cast<FunctionType>(symbol);
+#else
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
+        // POSIX specifies that function pointers obtained from dlsym can be converted from void* and invoked.
+        const auto typedSymbol = reinterpret_cast<FunctionType>(symbol);
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+        return typedSymbol;
+#endif
+    }
+
     LibraryHandle handle_ = nullptr;
 };
 
