@@ -130,6 +130,18 @@ static void* get_function_pointer(LibraryHandle libraryHandle, const char* funct
 #endif
 }
 
+static GenerateDefaultDeviceFingerprintFn load_generate_default_device_fingerprint(void* loadedFunctionPointer)
+{
+#if defined(__GNUC__) && !defined(_WIN32)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
+    return (GenerateDefaultDeviceFingerprintFn)loadedFunctionPointer;
+#if defined(__GNUC__) && !defined(_WIN32)
+#pragma GCC diagnostic pop
+#endif
+}
+
 static void close_dynamic_library(LibraryHandle libraryHandle)
 {
     if (libraryHandle == NULL)
@@ -196,7 +208,7 @@ int main(int argc, char* argv[])
     }
 
     GenerateDefaultDeviceFingerprintFn generateDefaultDeviceFingerprint =
-        (GenerateDefaultDeviceFingerprintFn)loadedFunctionPointer;
+        load_generate_default_device_fingerprint(loadedFunctionPointer);
 
     char deviceFingerprint[FINGERPRINT_BUFFER_SIZE] = {0};
     int fingerprintLength = MAX_FINGERPRINT_LENGTH;
