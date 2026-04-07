@@ -14,7 +14,8 @@
 #endif
 
 #define MAX_PATH_LENGTH 1024
-#define FINGERPRINT_BUFFER_SIZE 128
+#define MAX_FINGERPRINT_LENGTH 100
+#define FINGERPRINT_BUFFER_SIZE (MAX_FINGERPRINT_LENGTH + 1)
 
 #if defined(_WIN32)
 typedef HMODULE LibraryHandle;
@@ -168,7 +169,7 @@ int main(int argc, char* argv[])
         (GenerateDefaultDeviceFingerprintFn)loadedFunctionPointer;
 
     char deviceFingerprint[FINGERPRINT_BUFFER_SIZE] = {0};
-    int fingerprintLength = 0;
+    int fingerprintLength = MAX_FINGERPRINT_LENGTH;
 
     if (!generateDefaultDeviceFingerprint(deviceFingerprint, &fingerprintLength))
     {
@@ -177,17 +178,22 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
-    if (fingerprintLength < 0 || fingerprintLength >= (int)sizeof(deviceFingerprint))
+    if (fingerprintLength < 0 || fingerprintLength > MAX_FINGERPRINT_LENGTH)
     {
         fprintf(stderr, "Invalid fingerprint length returned by library: %d\n", fingerprintLength);
         close_dynamic_library(libraryHandle);
         return EXIT_FAILURE;
     }
 
-    deviceFingerprint[fingerprintLength] = '\0';
+    if (deviceFingerprint[fingerprintLength] != '\0')
+    {
+        fprintf(stderr, "Fingerprint buffer is missing a null terminator at index %d\n", fingerprintLength);
+        close_dynamic_library(libraryHandle);
+        return EXIT_FAILURE;
+    }
 
     printf("Loaded library: %s\n", libraryPath);
-    printf("Device fingerprint: %s\n", deviceFingerprint);
+    printf("Device fingerprint: %.*s\n", fingerprintLength, deviceFingerprint);
 
     close_dynamic_library(libraryHandle);
     return EXIT_SUCCESS;

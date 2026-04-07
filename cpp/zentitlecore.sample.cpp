@@ -17,6 +17,8 @@
 
 namespace
 {
+constexpr int kMaxFingerprintLength = 100;
+
 #if defined(_WIN32)
 using LibraryHandle = HMODULE;
 constexpr const char* kLibraryFileName = "Zentitle2Core.dll";
@@ -173,8 +175,8 @@ int main(int argc, char* argv[])
         const auto generateDefaultDeviceFingerprint =
             library.getFunction<GenerateDefaultDeviceFingerprint>("generateDefaultDeviceFingerprint");
 
-        std::array<char, 128> fingerprint = {};
-        int fingerprintLength = 0;
+        std::array<char, static_cast<std::size_t>(kMaxFingerprintLength) + 1U> fingerprint = {};
+        int fingerprintLength = kMaxFingerprintLength;
 
         const bool result = generateDefaultDeviceFingerprint(fingerprint.data(), &fingerprintLength);
         if (!result)
@@ -183,9 +185,15 @@ int main(int argc, char* argv[])
             return EXIT_FAILURE;
         }
 
-        if (fingerprintLength < 0 || static_cast<std::size_t>(fingerprintLength) > fingerprint.size())
+        if (fingerprintLength < 0 || fingerprintLength > kMaxFingerprintLength)
         {
             std::cerr << "Invalid fingerprint length returned by library: " << fingerprintLength << '\n';
+            return EXIT_FAILURE;
+        }
+
+        if (fingerprint[static_cast<std::size_t>(fingerprintLength)] != '\0')
+        {
+            std::cerr << "Fingerprint buffer is missing a null terminator at index " << fingerprintLength << '\n';
             return EXIT_FAILURE;
         }
 
