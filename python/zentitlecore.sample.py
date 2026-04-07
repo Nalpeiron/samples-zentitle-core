@@ -5,7 +5,8 @@ import platform
 import sys
 from ctypes import byref, c_bool, c_int, create_string_buffer
 
-FINGERPRINT_BUFFER_SIZE = 128
+MAX_FINGERPRINT_LENGTH = 100
+FINGERPRINT_BUFFER_SIZE = MAX_FINGERPRINT_LENGTH + 1
 
 
 def default_library_name() -> str:
@@ -52,16 +53,20 @@ generate_default_device_fingerprint.restype = c_bool
 generate_default_device_fingerprint.argtypes = [ctypes.c_char_p, ctypes.POINTER(c_int)]
 
 device_fingerprint = create_string_buffer(FINGERPRINT_BUFFER_SIZE)
-fingerprint_length = c_int(0)
+fingerprint_length = c_int(MAX_FINGERPRINT_LENGTH)
 
 result = generate_default_device_fingerprint(device_fingerprint, byref(fingerprint_length))
 if not result:
     print("generateDefaultDeviceFingerprint returned false")
     sys.exit(1)
 
-if fingerprint_length.value < 0 or fingerprint_length.value >= FINGERPRINT_BUFFER_SIZE:
+if fingerprint_length.value < 0 or fingerprint_length.value > MAX_FINGERPRINT_LENGTH:
     print(f"Invalid fingerprint length returned by library: {fingerprint_length.value}")
     sys.exit(1)
 
+if device_fingerprint.raw[fingerprint_length.value] != 0:
+    print(f"Fingerprint buffer is missing a null terminator at index {fingerprint_length.value}")
+    sys.exit(1)
+
 print(f"Loaded library: {loaded_library_path}")
-print("Device Fingerprint:", device_fingerprint.value.decode("utf-8", "replace"))
+print("Device Fingerprint:", device_fingerprint.raw[: fingerprint_length.value].decode("utf-8", "replace"))
