@@ -21,9 +21,7 @@ internal static class Program
 
   private static int Main(string[] args)
   {
-    var resolvedLibraryPath = args.Length > 0
-      ? args[0]
-      : Path.Combine(AppContext.BaseDirectory, LibraryName);
+    var resolvedLibraryPath = ResolveLibraryPath(args);
 
     if (!File.Exists(resolvedLibraryPath))
     {
@@ -91,5 +89,15 @@ internal static class Program
     {
       NativeLibrary.Free(libraryHandle);
     }
+  }
+
+  private static string ResolveLibraryPath(string[] args)
+  {
+    if (args.Length > 0)
+    {
+      return args[0];
+    }
+
+    return Path.Combine(AppContext.BaseDirectory, LibraryName);
   }
 }

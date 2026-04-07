@@ -22,26 +22,47 @@ constexpr int kMaxFingerprintLength = 100;
 #if defined(_WIN32)
 using LibraryHandle = HMODULE;
 constexpr const char* kLibraryFileName = "Zentitle2Core.dll";
-constexpr const char* kPlatformFolder = "Windows_x86_64";
 #elif defined(__APPLE__) && defined(__aarch64__)
 using LibraryHandle = void*;
 constexpr const char* kLibraryFileName = "libZentitle2Core.dylib";
-constexpr const char* kPlatformFolder = "MacOS_arm64";
 #elif defined(__APPLE__)
 using LibraryHandle = void*;
 constexpr const char* kLibraryFileName = "libZentitle2Core.dylib";
-constexpr const char* kPlatformFolder = "MacOS_x86_64";
 #elif defined(__linux__) && defined(__aarch64__)
 using LibraryHandle = void*;
 constexpr const char* kLibraryFileName = "libZentitle2Core.so";
-constexpr const char* kPlatformFolder = "Linux_aarch64";
 #elif defined(__linux__) && defined(__x86_64__)
 using LibraryHandle = void*;
 constexpr const char* kLibraryFileName = "libZentitle2Core.so";
-constexpr const char* kPlatformFolder = "Linux_x86_64";
 #else
 #error "Unsupported platform"
 #endif
+
+bool isAlpineLinux()
+{
+#if defined(__linux__)
+    return std::filesystem::exists("/etc/alpine-release");
+#else
+    return false;
+#endif
+}
+
+const char* getPlatformFolder()
+{
+#if defined(_WIN32)
+    return "Windows_x86_64";
+#elif defined(__APPLE__) && defined(__aarch64__)
+    return "MacOS_arm64";
+#elif defined(__APPLE__)
+    return "MacOS_x86_64";
+#elif defined(__linux__) && defined(__aarch64__)
+    return isAlpineLinux() ? "Linux_alpine_aarch64" : "Linux_aarch64";
+#elif defined(__linux__) && defined(__x86_64__)
+    return isAlpineLinux() ? "Linux_alpine_x86_64" : "Linux_x86_64";
+#else
+#error "Unsupported platform"
+#endif
+}
 
 std::string getLastLibraryError()
 {
@@ -152,7 +173,7 @@ std::filesystem::path resolveLibraryPath(int argc, char* argv[])
     }
 
     const std::filesystem::path defaultSdkRoot = std::filesystem::current_path() / "Zentitle2_SDK_v2.5.0";
-    return defaultSdkRoot / "Zentitle2Core" / kPlatformFolder / kLibraryFileName;
+    return defaultSdkRoot / "Zentitle2Core" / getPlatformFolder() / kLibraryFileName;
 }
 }
 

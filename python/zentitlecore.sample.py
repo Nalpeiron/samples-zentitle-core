@@ -16,8 +16,6 @@ def default_library_name() -> str:
     if system == "Darwin":
         return "libZentitle2Core.dylib"
     return "libZentitle2Core.so"
-
-
 def load_dynamic_library():
     here = os.path.dirname(os.path.abspath(__file__))
     if len(sys.argv) > 1:

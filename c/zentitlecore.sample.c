@@ -26,33 +26,61 @@
 #if defined(_WIN32)
 typedef HMODULE LibraryHandle;
 #define PATH_SEPARATOR "\\"
-#define PLATFORM_FOLDER "Windows_x86_64"
 #define LIBRARY_FILE_NAME "Zentitle2Core.dll"
 #elif defined(__APPLE__) && defined(__aarch64__)
 typedef void* LibraryHandle;
 #define PATH_SEPARATOR "/"
-#define PLATFORM_FOLDER "MacOS_arm64"
 #define LIBRARY_FILE_NAME "libZentitle2Core.dylib"
 #elif defined(__APPLE__)
 typedef void* LibraryHandle;
 #define PATH_SEPARATOR "/"
-#define PLATFORM_FOLDER "MacOS_x86_64"
 #define LIBRARY_FILE_NAME "libZentitle2Core.dylib"
 #elif defined(__linux__) && defined(__aarch64__)
 typedef void* LibraryHandle;
 #define PATH_SEPARATOR "/"
-#define PLATFORM_FOLDER "Linux_aarch64"
 #define LIBRARY_FILE_NAME "libZentitle2Core.so"
 #elif defined(__linux__) && defined(__x86_64__)
 typedef void* LibraryHandle;
 #define PATH_SEPARATOR "/"
-#define PLATFORM_FOLDER "Linux_x86_64"
 #define LIBRARY_FILE_NAME "libZentitle2Core.so"
 #else
 #error "Unsupported platform"
 #endif
 
 typedef bool (*GenerateDefaultDeviceFingerprintFn)(char*, int*);
+
+static bool is_alpine_linux(void)
+{
+#if defined(__linux__)
+    FILE* alpineRelease = fopen("/etc/alpine-release", "r");
+    if (alpineRelease == NULL)
+    {
+        return false;
+    }
+
+    fclose(alpineRelease);
+    return true;
+#else
+    return false;
+#endif
+}
+
+static const char* get_platform_folder(void)
+{
+#if defined(_WIN32)
+    return "Windows_x86_64";
+#elif defined(__APPLE__) && defined(__aarch64__)
+    return "MacOS_arm64";
+#elif defined(__APPLE__)
+    return "MacOS_x86_64";
+#elif defined(__linux__) && defined(__aarch64__)
+    return is_alpine_linux() ? "Linux_alpine_aarch64" : "Linux_aarch64";
+#elif defined(__linux__) && defined(__x86_64__)
+    return is_alpine_linux() ? "Linux_alpine_x86_64" : "Linux_x86_64";
+#else
+#error "Unsupported platform"
+#endif
+}
 
 static const char* get_last_library_error(void)
 {
@@ -165,7 +193,7 @@ static bool build_default_library_path(char* output, size_t outputSize)
         PATH_SEPARATOR,
         PATH_SEPARATOR,
         PATH_SEPARATOR,
-        PLATFORM_FOLDER,
+        get_platform_folder(),
         PATH_SEPARATOR LIBRARY_FILE_NAME);
 
     return written > 0 && (size_t)written < outputSize;
