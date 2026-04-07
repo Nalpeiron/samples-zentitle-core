@@ -1,179 +1,194 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
-#include <stdbool.h>
 
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
 #else
 #include <dlfcn.h>
 #endif
 
-// Define platform-specific library extension and prefix
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-#include <windows.h>
-#define LIB_EXTENSION "dll"
-#define LIB_PREFIX ""
-#elif defined(__APPLE__)
-#include <dlfcn.h>
-#define LIB_EXTENSION "dylib"
-#define LIB_PREFIX "lib"
-#elif defined(__linux__)
-#include <dlfcn.h>
-#include <cstring>
-#define LIB_EXTENSION "so"
-#define LIB_PREFIX "lib"
-#else
-#error "Unsupported platform"
-#endif
-
-// Define the maximum path length
 #define MAX_PATH_LENGTH 1024
+#define FINGERPRINT_BUFFER_SIZE 128
 
-// Function to get the current directory path
-void getLibraryPath(char* libraryPath)
-{
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-  // For Windows systems, use strcpy_s for safer copying
-  strcpy_s(libraryPath, MAX_PATH_LENGTH, ".");
-#else
-  // For Unix-based systems, use strcpy
-  strcpy(libraryPath, ".");
-#endif
-}
-
-// Define platform-specific library extension and prefix
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-#include <windows.h>
-#define LIB_EXTENSION "dll"
-#define LIB_PREFIX ""
+#if defined(_WIN32)
+typedef HMODULE LibraryHandle;
+#define PATH_SEPARATOR "\\"
+#define PLATFORM_FOLDER "Windows_x86_64"
+#define LIBRARY_FILE_NAME "Zentitle2Core.dll"
+#elif defined(__APPLE__) && defined(__aarch64__)
+typedef void* LibraryHandle;
+#define PATH_SEPARATOR "/"
+#define PLATFORM_FOLDER "MacOS_arm64"
+#define LIBRARY_FILE_NAME "libZentitle2Core.dylib"
 #elif defined(__APPLE__)
-#include <dlfcn.h>
-#define LIB_EXTENSION "dylib"
-#define LIB_PREFIX "lib"
-#elif defined(__linux__)
-#include <dlfcn.h>
-#define LIB_EXTENSION "so"
-#define LIB_PREFIX "lib"
+typedef void* LibraryHandle;
+#define PATH_SEPARATOR "/"
+#define PLATFORM_FOLDER "MacOS_x86_64"
+#define LIBRARY_FILE_NAME "libZentitle2Core.dylib"
+#elif defined(__linux__) && defined(__aarch64__)
+typedef void* LibraryHandle;
+#define PATH_SEPARATOR "/"
+#define PLATFORM_FOLDER "Linux_aarch64"
+#define LIBRARY_FILE_NAME "libZentitle2Core.so"
+#elif defined(__linux__) && defined(__x86_64__)
+typedef void* LibraryHandle;
+#define PATH_SEPARATOR "/"
+#define PLATFORM_FOLDER "Linux_x86_64"
+#define LIBRARY_FILE_NAME "libZentitle2Core.so"
 #else
 #error "Unsupported platform"
 #endif
 
-// Function to construct library full name based on platform specifics
-void GetLibFullName(const char* libraryPath, const char* libraryName, char* libFullName)
+typedef bool (*GenerateDefaultDeviceFingerprintFn)(char*, int*);
+
+static const char* get_last_library_error(void)
 {
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-  strcpy_s(libFullName, MAX_PATH_LENGTH, libraryPath);
-  strcat_s(libFullName, MAX_PATH_LENGTH, LIB_PREFIX);
-  strcat_s(libFullName, MAX_PATH_LENGTH, libraryName);
-  strcat_s(libFullName, MAX_PATH_LENGTH, ".");
-  strcat_s(libFullName, MAX_PATH_LENGTH, LIB_EXTENSION);
+#if defined(_WIN32)
+    static char messageBuffer[512];
+    const DWORD errorCode = GetLastError();
+
+    if (errorCode == 0)
+    {
+        return "unknown error";
+    }
+
+    const DWORD result = FormatMessageA(
+        FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL,
+        errorCode,
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        messageBuffer,
+        (DWORD)sizeof(messageBuffer),
+        NULL);
+
+    if (result == 0)
+    {
+        return "unknown error";
+    }
+
+    return messageBuffer;
 #else
-  strcpy(libFullName, libraryPath);
-  strcat(libFullName, LIB_PREFIX);
-  strcat(libFullName, libraryName);
-  strcat(libFullName, ".");
-  strcat(libFullName, LIB_EXTENSION);
+    const char* error = dlerror();
+    return error != NULL ? error : "unknown error";
 #endif
 }
 
-bool exists(const char* filePath)
+static LibraryHandle load_dynamic_library(const char* libraryPath)
 {
-  FILE* file;
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-  if (fopen_s(&file, filePath, "r") == 0)
+#if defined(_WIN32)
+    return LoadLibraryA(libraryPath);
 #else
-  if ((file = fopen(filePath, "r")))
-#endif
-  {
-    fclose(file);
-    return true;
-  }
-  return false;
-}
-
-// Platform-independent function to load a dynamic library
-void* LoadDynamicLibrary(const char* libFullName)
-{
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-  return LoadLibraryA(libFullName);
-#else
-  return dlopen(libFullName, RTLD_NOW | RTLD_LOCAL);
+    dlerror();
+    return dlopen(libraryPath, RTLD_NOW | RTLD_LOCAL);
 #endif
 }
 
-// Platform-independent function to get a function pointer from a dynamic library
-void* GetFunctionPointer(void* libraryHandle, const char* functionSymbol)
+static void* get_function_pointer(LibraryHandle libraryHandle, const char* functionSymbol)
 {
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-  return GetProcAddress((HMODULE)libraryHandle, functionSymbol);
+#if defined(_WIN32)
+    return (void*)GetProcAddress(libraryHandle, functionSymbol);
 #else
-  return dlsym(libraryHandle, functionSymbol);
+    dlerror();
+    return dlsym(libraryHandle, functionSymbol);
 #endif
 }
 
-// Platform-independent function to close a dynamic library
-void CloseDynamicLibrary(void* libraryHandle)
+static void close_dynamic_library(LibraryHandle libraryHandle)
 {
-#if defined(__APPLE__) || defined(__linux__)
-  dlclose(libraryHandle);
+    if (libraryHandle == NULL)
+    {
+        return;
+    }
+
+#if defined(_WIN32)
+    FreeLibrary(libraryHandle);
+#else
+    dlclose(libraryHandle);
 #endif
+}
+
+static bool build_default_library_path(char* output, size_t outputSize)
+{
+    const int written = snprintf(
+        output,
+        outputSize,
+        ".%sZentitle2_SDK_v2.5.0%sZentitle2Core%s%s%s",
+        PATH_SEPARATOR,
+        PATH_SEPARATOR,
+        PATH_SEPARATOR,
+        PLATFORM_FOLDER,
+        PATH_SEPARATOR LIBRARY_FILE_NAME);
+
+    return written > 0 && (size_t)written < outputSize;
 }
 
 int main(int argc, char* argv[])
 {
+    char libraryPath[MAX_PATH_LENGTH] = {0};
 
-  char libraryPath[MAX_PATH_LENGTH] = { 0 };
-  getLibraryPath( libraryPath );
-  const char* libraryName = "Zentitle2Core";
+    if (argc > 1)
+    {
+        const size_t inputLength = strlen(argv[1]);
+        if (inputLength >= sizeof(libraryPath))
+        {
+            fprintf(stderr, "Library path is too long\n");
+            return EXIT_FAILURE;
+        }
 
-  char libFullName[MAX_PATH_LENGTH];
-  GetLibFullName( libraryPath, libraryName, libFullName );
+        memcpy(libraryPath, argv[1], inputLength + 1U);
+    }
+    else if (!build_default_library_path(libraryPath, sizeof(libraryPath)))
+    {
+        fprintf(stderr, "Failed to build default library path\n");
+        return EXIT_FAILURE;
+    }
 
-  if ( false == exists( libFullName ) )
-  {
-    printf( "Library %s does not exist\n", libFullName );
-    return EXIT_FAILURE;
-  }
+    LibraryHandle libraryHandle = load_dynamic_library(libraryPath);
+    if (libraryHandle == NULL)
+    {
+        fprintf(stderr, "Failed to load library: %s (%s)\n", libraryPath, get_last_library_error());
+        return EXIT_FAILURE;
+    }
 
-  // Load dynamic library  
-  void* libraryHandle = LoadDynamicLibrary(libFullName);
-  if (NULL == libraryHandle)
-  {
-    printf( "Library %s could not be loaded\n", libFullName );
-    return EXIT_FAILURE;
-  }  
+    void* loadedFunctionPointer = get_function_pointer(libraryHandle, "generateDefaultDeviceFingerprint");
+    if (loadedFunctionPointer == NULL)
+    {
+        fprintf(stderr, "Failed to load symbol: generateDefaultDeviceFingerprint (%s)\n", get_last_library_error());
+        close_dynamic_library(libraryHandle);
+        return EXIT_FAILURE;
+    }
 
-  char* functionSymbol = "generateDefaultDeviceFingerprint";
+    GenerateDefaultDeviceFingerprintFn generateDefaultDeviceFingerprint =
+        (GenerateDefaultDeviceFingerprintFn)loadedFunctionPointer;
 
-  // Get function pointer from dynamic library
-  void* loadedFunctionPointer = GetFunctionPointer(libraryHandle, functionSymbol);
+    char deviceFingerprint[FINGERPRINT_BUFFER_SIZE] = {0};
+    int fingerprintLength = 0;
 
-  if ( NULL == loadedFunctionPointer)
-  {
-    printf( "Function %s could not be loaded\n", functionSymbol );
-    return EXIT_FAILURE;
-  }
+    if (!generateDefaultDeviceFingerprint(deviceFingerprint, &fingerprintLength))
+    {
+        fprintf(stderr, "generateDefaultDeviceFingerprint returned false\n");
+        close_dynamic_library(libraryHandle);
+        return EXIT_FAILURE;
+    }
 
-  // Cast function pointer to function type
-  bool ( *getDeviceFingerprint )( char* ) = ( bool ( * )( char* ) ) loadedFunctionPointer;
+    if (fingerprintLength < 0 || fingerprintLength >= (int)sizeof(deviceFingerprint))
+    {
+        fprintf(stderr, "Invalid fingerprint length returned by library: %d\n", fingerprintLength);
+        close_dynamic_library(libraryHandle);
+        return EXIT_FAILURE;
+    }
 
-  char deviceFingerprint[100];
+    deviceFingerprint[fingerprintLength] = '\0';
 
-  // Use function pointer
-  bool result = getDeviceFingerprint(deviceFingerprint);
+    printf("Loaded library: %s\n", libraryPath);
+    printf("Device fingerprint: %s\n", deviceFingerprint);
 
-  if (false == result)
-  {
-    printf( "Function %s could not be executed\n", functionSymbol );
-    return EXIT_FAILURE;
-  }
-
-  printf("Device fingerprint: %s\n", deviceFingerprint);
-
-  CloseDynamicLibrary(libraryHandle);  
-  return EXIT_SUCCESS;
+    close_dynamic_library(libraryHandle);
+    return EXIT_SUCCESS;
 }
