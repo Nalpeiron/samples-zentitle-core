@@ -1,107 +1,202 @@
+#include <array>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
-#include <algorithm>
+#include <stdexcept>
 #include <string>
-#include <string>
-#include <fstream>
 
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
 #else
 #include <dlfcn.h>
 #endif
 
-// Define platform-specific library extension and prefix
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-#include <windows.h>
-#define LIB_EXTENSION "dll"
-#define LIB_PREFIX ""
+namespace
+{
+#if defined(_WIN32)
+using LibraryHandle = HMODULE;
+constexpr const char* kLibraryFileName = "Zentitle2Core.dll";
+constexpr const char* kPlatformFolder = "Windows_x86_64";
+#elif defined(__APPLE__) && defined(__aarch64__)
+using LibraryHandle = void*;
+constexpr const char* kLibraryFileName = "libZentitle2Core.dylib";
+constexpr const char* kPlatformFolder = "MacOS_arm64";
 #elif defined(__APPLE__)
-#include <dlfcn.h>
-#define LIB_EXTENSION "dylib"
-#define LIB_PREFIX "lib"
-#elif defined(__linux__)
-#include <dlfcn.h>
-#include <cstring>
-#define LIB_EXTENSION "so"
-#define LIB_PREFIX "lib"
+using LibraryHandle = void*;
+constexpr const char* kLibraryFileName = "libZentitle2Core.dylib";
+constexpr const char* kPlatformFolder = "MacOS_x86_64";
+#elif defined(__linux__) && defined(__aarch64__)
+using LibraryHandle = void*;
+constexpr const char* kLibraryFileName = "libZentitle2Core.so";
+constexpr const char* kPlatformFolder = "Linux_aarch64";
+#elif defined(__linux__) && defined(__x86_64__)
+using LibraryHandle = void*;
+constexpr const char* kLibraryFileName = "libZentitle2Core.so";
+constexpr const char* kPlatformFolder = "Linux_x86_64";
 #else
 #error "Unsupported platform"
 #endif
 
-// Function to construct library full name based on platform specifics
-std::string GetLibFullName(const std::string& libraryPath, const std::string& libraryName) 
+std::string getLastLibraryError()
 {
-  return libraryPath + LIB_PREFIX + libraryName + "." + LIB_EXTENSION;
-}
+#if defined(_WIN32)
+    const DWORD errorCode = GetLastError();
+    if (errorCode == 0)
+    {
+        return "unknown error";
+    }
 
-// Platform-independent function to load a dynamic library
-void* LoadDynamicLibrary(const std::string& libFullName) {
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-  return LoadLibraryA(libFullName.c_str());
+    LPSTR messageBuffer = nullptr;
+    const DWORD size = FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        nullptr,
+        errorCode,
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        reinterpret_cast<LPSTR>(&messageBuffer),
+        0,
+        nullptr);
+
+    std::string message = (size > 0 && messageBuffer != nullptr) ? std::string(messageBuffer, size) : "unknown error";
+    if (messageBuffer != nullptr)
+    {
+        LocalFree(messageBuffer);
+    }
+    return message;
 #else
-  return dlopen(libFullName.c_str(), RTLD_NOW | RTLD_LOCAL);
+    const char* error = dlerror();
+    return error != nullptr ? std::string(error) : "unknown error";
 #endif
 }
 
-// Platform-independent function to get a function pointer from a dynamic library
-void* GetFunctionPointer(void* libraryHandle, const std::string& functionSymbol) {
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-  return GetProcAddress((HMODULE)libraryHandle, functionSymbol.c_str());
-#else
-  return dlsym(libraryHandle, functionSymbol.c_str());
-#endif
-}
-
-// Platform-independent function to close a dynamic library
-inline void CloseDynamicLibrary(void* libraryHandle) 
+LibraryHandle loadDynamicLibrary(const std::filesystem::path& libraryPath)
 {
-#if defined(__APPLE__) || defined(__linux__)
-  dlclose(libraryHandle);
+#if defined(_WIN32)
+    return LoadLibraryA(libraryPath.string().c_str());
+#else
+    dlerror();
+    return dlopen(libraryPath.string().c_str(), RTLD_NOW | RTLD_LOCAL);
 #endif
+}
+
+void* getFunctionPointer(LibraryHandle libraryHandle, const char* functionSymbol)
+{
+#if defined(_WIN32)
+    return reinterpret_cast<void*>(GetProcAddress(libraryHandle, functionSymbol));
+#else
+    dlerror();
+    return dlsym(libraryHandle, functionSymbol);
+#endif
+}
+
+void closeDynamicLibrary(LibraryHandle libraryHandle)
+{
+    if (libraryHandle == nullptr)
+    {
+        return;
+    }
+
+#if defined(_WIN32)
+    FreeLibrary(libraryHandle);
+#else
+    dlclose(libraryHandle);
+#endif
+}
+
+class ScopedLibrary
+{
+public:
+    explicit ScopedLibrary(const std::filesystem::path& libraryPath)
+        : handle_(loadDynamicLibrary(libraryPath))
+    {
+        if (handle_ == nullptr)
+        {
+            throw std::runtime_error("Failed to load library: " + libraryPath.string() + " (" + getLastLibraryError() + ")");
+        }
+    }
+
+    ~ScopedLibrary()
+    {
+        closeDynamicLibrary(handle_);
+    }
+
+    ScopedLibrary(const ScopedLibrary&) = delete;
+    ScopedLibrary& operator=(const ScopedLibrary&) = delete;
+
+    template <typename FunctionType>
+    FunctionType getFunction(const char* functionSymbol) const
+    {
+        void* symbol = getFunctionPointer(handle_, functionSymbol);
+        if (symbol == nullptr)
+        {
+            throw std::runtime_error("Failed to load symbol: " + std::string(functionSymbol) + " (" + getLastLibraryError() + ")");
+        }
+
+        return reinterpret_cast<FunctionType>(symbol);
+    }
+
+private:
+    LibraryHandle handle_ = nullptr;
+};
+
+std::filesystem::path resolveLibraryPath(int argc, char* argv[])
+{
+    if (argc > 1)
+    {
+        return std::filesystem::path(argv[1]);
+    }
+
+    const std::filesystem::path defaultSdkRoot = std::filesystem::current_path() / "Zentitle2_SDK_v2.5.0";
+    return defaultSdkRoot / "Zentitle2Core" / kPlatformFolder / kLibraryFileName;
+}
 }
 
 int main(int argc, char* argv[])
 {
-  // Library path should be relative to the executable
-  const std::string libraryPath = "C:\\Path\\To\\Library\\";
-  const std::string libraryName = "Zentitle2Core";
+    try
+    {
+        const std::filesystem::path libraryPath = resolveLibraryPath(argc, argv);
 
-  // Construct library full name based on platform specifics
-  std::string libFullName = GetLibFullName(libraryPath, libraryName);
+        if (!std::filesystem::exists(libraryPath))
+        {
+            std::cerr << "Library not found: " << libraryPath << '\n';
+            std::cerr << "Pass the full path to the runtime library as the first argument if needed.\n";
+            return EXIT_FAILURE;
+        }
 
-  // Load dynamic library
-  void* libraryHandle = LoadDynamicLibrary(libFullName);
+        ScopedLibrary library(libraryPath);
 
-  std::string functionSymbol = "generateDefaultDeviceFingerprint";
+        using GenerateDefaultDeviceFingerprint = bool (*)(char*, int*);
+        const auto generateDefaultDeviceFingerprint =
+            library.getFunction<GenerateDefaultDeviceFingerprint>("generateDefaultDeviceFingerprint");
 
-  // Get function pointer from dynamic library
-  void* loadedFunctionPointer = GetFunctionPointer(libraryHandle, functionSymbol);
-  if (loadedFunctionPointer == nullptr)
-  {
-    std::cout << "Failed to load function pointer" << std::endl;
-    return EXIT_FAILURE;
-  }
+        std::array<char, 128> fingerprint = {};
+        int fingerprintLength = 0;
 
-  // Cast function pointer to function type
-  auto getDeviceFingerprint = reinterpret_cast<bool (*)(char*)>(loadedFunctionPointer);
+        const bool result = generateDefaultDeviceFingerprint(fingerprint.data(), &fingerprintLength);
+        if (!result)
+        {
+            std::cerr << "generateDefaultDeviceFingerprint returned false\n";
+            return EXIT_FAILURE;
+        }
 
-  char* deviceFingerprint = new char[100];
+        if (fingerprintLength < 0 || static_cast<std::size_t>(fingerprintLength) > fingerprint.size())
+        {
+            std::cerr << "Invalid fingerprint length returned by library: " << fingerprintLength << '\n';
+            return EXIT_FAILURE;
+        }
 
-  // Use function pointer
-  bool result = getDeviceFingerprint(deviceFingerprint);
-  if (result == false)
-  {
-    std::cout << "Failed to get device fingerprint" << std::endl;
-    return EXIT_FAILURE;
-  }
-
-  std::cout << "Device fingerprint: " << deviceFingerprint << std::endl;
-
-  delete[] deviceFingerprint;
-  CloseDynamicLibrary(libraryHandle);
-
-  return EXIT_SUCCESS;
+        std::cout << "Loaded library: " << libraryPath << '\n';
+        std::cout << "Device fingerprint: "
+                  << std::string(fingerprint.data(), static_cast<std::size_t>(fingerprintLength)) << '\n';
+        return EXIT_SUCCESS;
+    }
+    catch (const std::exception& ex)
+    {
+        std::cerr << ex.what() << '\n';
+        return EXIT_FAILURE;
+    }
 }
