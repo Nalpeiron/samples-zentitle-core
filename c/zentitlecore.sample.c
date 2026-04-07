@@ -4,6 +4,12 @@
 #include <string.h>
 
 #if defined(_WIN32)
+#ifndef UNICODE
+#define UNICODE
+#endif
+#ifndef _UNICODE
+#define _UNICODE
+#endif
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -83,7 +89,31 @@ static const char* get_last_library_error(void)
 static LibraryHandle load_dynamic_library(const char* libraryPath)
 {
 #if defined(_WIN32)
-    return LoadLibraryA(libraryPath);
+    int wideLength = MultiByteToWideChar(CP_UTF8, 0, libraryPath, -1, NULL, 0);
+    WCHAR* wideLibraryPath = NULL;
+    LibraryHandle libraryHandle = NULL;
+
+    if (wideLength <= 0)
+    {
+        return NULL;
+    }
+
+    wideLibraryPath = (WCHAR*)malloc((size_t)wideLength * sizeof(WCHAR));
+    if (wideLibraryPath == NULL)
+    {
+        SetLastError(ERROR_OUTOFMEMORY);
+        return NULL;
+    }
+
+    if (MultiByteToWideChar(CP_UTF8, 0, libraryPath, -1, wideLibraryPath, wideLength) <= 0)
+    {
+        free(wideLibraryPath);
+        return NULL;
+    }
+
+    libraryHandle = LoadLibraryW(wideLibraryPath);
+    free(wideLibraryPath);
+    return libraryHandle;
 #else
     dlerror();
     return dlopen(libraryPath, RTLD_NOW | RTLD_LOCAL);

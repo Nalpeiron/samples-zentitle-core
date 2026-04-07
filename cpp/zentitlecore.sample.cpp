@@ -77,7 +77,7 @@ std::string getLastLibraryError()
 LibraryHandle loadDynamicLibrary(const std::filesystem::path& libraryPath)
 {
 #if defined(_WIN32)
-    return LoadLibraryA(libraryPath.string().c_str());
+    return LoadLibraryW(libraryPath.c_str());
 #else
     dlerror();
     return dlopen(libraryPath.string().c_str(), RTLD_NOW | RTLD_LOCAL);
