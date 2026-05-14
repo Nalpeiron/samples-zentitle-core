@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
+#include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,7 +47,7 @@ typedef void* LibraryHandle;
 #error "Unsupported platform"
 #endif
 
-typedef bool (*GenerateDefaultDeviceFingerprintFn)(char*, int*);
+typedef int32_t (*GenerateDefaultDeviceFingerprintFn)(char*, int*);
 
 static const char* get_last_library_error(void)
 {
@@ -273,9 +274,10 @@ int main(int argc, char* argv[])
     char deviceFingerprint[FINGERPRINT_BUFFER_SIZE] = {0};
     int fingerprintLength = MAX_FINGERPRINT_LENGTH;
 
-    if (!generateDefaultDeviceFingerprint(deviceFingerprint, &fingerprintLength))
+    const int32_t status = generateDefaultDeviceFingerprint(deviceFingerprint, &fingerprintLength);
+    if (status != 0)
     {
-        fprintf(stderr, "generateDefaultDeviceFingerprint returned false\n");
+        fprintf(stderr, "generateDefaultDeviceFingerprint failed with status code %d\n", status);
         close_dynamic_library(libraryHandle);
         return EXIT_FAILURE;
     }

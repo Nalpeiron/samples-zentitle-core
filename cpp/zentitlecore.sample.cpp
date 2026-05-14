@@ -1,4 +1,5 @@
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -178,17 +179,17 @@ int main(int argc, char* argv[])
 
         ScopedLibrary library(libraryPath);
 
-        using GenerateDefaultDeviceFingerprint = bool (*)(char*, int*);
+        using GenerateDefaultDeviceFingerprint = std::int32_t (*)(char*, int*);
         const auto generateDefaultDeviceFingerprint =
             library.getFunction<GenerateDefaultDeviceFingerprint>("generateDefaultDeviceFingerprint");
 
         std::array<char, static_cast<std::size_t>(kMaxFingerprintLength) + 1U> fingerprint = {};
         int fingerprintLength = kMaxFingerprintLength;
 
-        const bool result = generateDefaultDeviceFingerprint(fingerprint.data(), &fingerprintLength);
-        if (!result)
+        const std::int32_t status = generateDefaultDeviceFingerprint(fingerprint.data(), &fingerprintLength);
+        if (status != 0)
         {
-            std::cerr << "generateDefaultDeviceFingerprint returned false\n";
+            std::cerr << "generateDefaultDeviceFingerprint failed with status code " << status << '\n';
             return EXIT_FAILURE;
         }
 

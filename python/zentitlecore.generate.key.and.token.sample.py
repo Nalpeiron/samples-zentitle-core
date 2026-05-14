@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import os, sys, json, ctypes, platform, base64, datetime
-from ctypes import c_bool, c_int, c_char_p, c_uint8, POINTER, create_string_buffer, byref
+from ctypes import c_int, c_int32, c_char, c_char_p, c_uint8, POINTER, create_string_buffer, byref
 
 # --- Auto-detect Core library name ---
 system = platform.system()
@@ -34,15 +34,15 @@ lib.enableLogging.argtypes = (c_char_p,)
 lib.enableLogging.restype = None
 
 lib.generateDefaultEncryptionKey.argtypes = (POINTER(c_uint8),)
-lib.generateDefaultEncryptionKey.restype = c_bool
+lib.generateDefaultEncryptionKey.restype = c_int32
 
 lib.generateActivationRequestToken.argtypes = (
-    c_char_p, POINTER(c_int), c_char_p, c_char_p, c_char_p
+    POINTER(c_char), POINTER(c_int), c_char_p, c_char_p, c_char_p
 )
-lib.generateActivationRequestToken.restype = c_bool
+lib.generateActivationRequestToken.restype = c_int32
 
-lib.getVersion.argtypes = (c_char_p, POINTER(c_int))
-lib.getVersion.restype = c_bool
+lib.getVersion.argtypes = (POINTER(c_char), POINTER(c_int))
+lib.getVersion.restype = c_int32
 
 # --- Constants ---
 # Replace the placeholder values below with your real product details and public key.
@@ -77,8 +77,9 @@ def iso8601_utc_now() -> str:
 
 def generate_aes_key_base64() -> str:
     key_raw = (c_uint8 * 32)()
-    if not lib.generateDefaultEncryptionKey(key_raw):
-        print("❌ generateDefaultEncryptionKey() failed")
+    status = lib.generateDefaultEncryptionKey(key_raw)
+    if status != 0:
+        print(f"❌ generateDefaultEncryptionKey() failed with status code {status}")
         sys.exit(1)
     key_bytes = bytes(bytearray(key_raw))
     return base64.b64encode(key_bytes).decode("ascii")
@@ -96,7 +97,7 @@ def call_generate_activation_request_token(payload: dict, aes_key_b64: str, tag:
 
     out = create_string_buffer(BUFFER_SIZE)
     n = c_int(BUFFER_SIZE)
-    ok_token = lib.generateActivationRequestToken(
+    status = lib.generateActivationRequestToken(
         out,
         byref(n),
         payload_json,
@@ -104,10 +105,10 @@ def call_generate_activation_request_token(payload: dict, aes_key_b64: str, tag:
         PUBLIC_KEY_PEM
     )
 
-    print(f"{tag} token result: {ok_token} | length: {n.value}")
+    print(f"{tag} token status: {status} | length: {n.value}")
 
-    if not ok_token or n.value <= 3:
-        print(f"❌ {tag} FAILED – likely invalid RSA public key or payload.")
+    if status != 0 or n.value <= 3:
+        print(f"❌ {tag} FAILED with status code {status}. Check the RSA public key and payload.")
         sys.exit(1)
 
     return out.value.decode("utf-8", "replace")
@@ -121,7 +122,7 @@ def main():
     try:
         buf = create_string_buffer(1024)
         n = c_int(1024)
-        if lib.getVersion(buf, byref(n)):
+        if lib.getVersion(buf, byref(n)) == 0:
             print("Version:", buf.value.decode("utf-8", "replace"))
     except Exception:
         pass

@@ -17,7 +17,7 @@ internal static class Program
 #endif
 
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-  private delegate bool GenerateDefaultDeviceFingerprintDelegate(byte[] fingerprint, ref int length);
+  private delegate int GenerateDefaultDeviceFingerprintDelegate(byte[] fingerprint, ref int length);
 
   private static int Main(string[] args)
   {
@@ -62,10 +62,10 @@ internal static class Program
 
     try
     {
-      var result = generateDefaultDeviceFingerprint(buffer, ref fingerprintLength);
-      if (!result)
+      var status = generateDefaultDeviceFingerprint(buffer, ref fingerprintLength);
+      if (status != 0)
       {
-        Console.Error.WriteLine("generateDefaultDeviceFingerprint returned false");
+        Console.Error.WriteLine($"generateDefaultDeviceFingerprint failed with status code {status}");
         return 1;
       }
 

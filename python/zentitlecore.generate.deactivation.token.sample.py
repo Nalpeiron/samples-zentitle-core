@@ -17,7 +17,7 @@ import json
 import ctypes
 import platform
 import datetime
-from ctypes import c_char_p, c_int, POINTER, create_string_buffer, byref
+from ctypes import c_char, c_char_p, c_int, c_int32, POINTER, create_string_buffer, byref
 
 # ---------- Library autodetect ----------
 system = platform.system()
@@ -50,11 +50,11 @@ else:
 lib.enableLogging.argtypes = (c_char_p,)
 lib.enableLogging.restype = None
 
-lib.generateActivationRequestToken.argtypes = (c_char_p, POINTER(c_int), c_char_p, c_char_p, c_char_p)
-lib.generateActivationRequestToken.restype = ctypes.c_bool
+lib.generateActivationRequestToken.argtypes = (POINTER(c_char), POINTER(c_int), c_char_p, c_char_p, c_char_p)
+lib.generateActivationRequestToken.restype = c_int32
 
-lib.getVersion.argtypes = (c_char_p, POINTER(c_int))
-lib.getVersion.restype = ctypes.c_bool
+lib.getVersion.argtypes = (POINTER(c_char), POINTER(c_int))
+lib.getVersion.restype = c_int32
 
 # ---------- CONFIG (USER MUST FILL) ----------
 PUBLIC_KEY_PEM = b"""-----BEGIN PUBLIC KEY-----
@@ -132,7 +132,7 @@ def main() -> None:
     try:
         buf = create_string_buffer(1024)
         n = c_int(1024)
-        if lib.getVersion(buf, byref(n)):
+        if lib.getVersion(buf, byref(n)) == 0:
             print("Version:", buf.value.decode("utf-8", "replace"))
     except Exception:
         pass
@@ -159,17 +159,17 @@ def main() -> None:
     out = create_string_buffer(BUFFER_SIZE)
     out_len = c_int(BUFFER_SIZE)
 
-    ok = lib.generateActivationRequestToken(
+    status = lib.generateActivationRequestToken(
         out,
         byref(out_len),
         payload_json,
         aes_key_b64.encode("ascii"),
         PUBLIC_KEY_PEM,
     )
-    print(f"Deactivation token result: {ok} | length: {out_len.value}")
+    print(f"Deactivation token status: {status} | length: {out_len.value}")
 
-    if not ok or out_len.value <= 3:
-        print("❌ Deactivation FAILED – invalid RSA public key or payload.")
+    if status != 0 or out_len.value <= 3:
+        print(f"❌ Deactivation FAILED with status code {status}. Check the RSA public key and payload.")
         sys.exit(1)
 
     token = out.value.decode("utf-8", "replace")

@@ -3,7 +3,7 @@ import ctypes
 import os
 import platform
 import sys
-from ctypes import POINTER, byref, c_bool, c_char, c_int, create_string_buffer
+from ctypes import POINTER, byref, c_char, c_int, c_int32, create_string_buffer
 
 MAX_FINGERPRINT_LENGTH = 100
 FINGERPRINT_BUFFER_SIZE = MAX_FINGERPRINT_LENGTH + 1
@@ -52,15 +52,15 @@ def load_dynamic_library():
 lib, loaded_library_path = load_dynamic_library()
 
 generate_default_device_fingerprint = lib.generateDefaultDeviceFingerprint
-generate_default_device_fingerprint.restype = c_bool
+generate_default_device_fingerprint.restype = c_int32
 generate_default_device_fingerprint.argtypes = [POINTER(c_char), ctypes.POINTER(c_int)]
 
 device_fingerprint = create_string_buffer(FINGERPRINT_BUFFER_SIZE)
 fingerprint_length = c_int(MAX_FINGERPRINT_LENGTH)
 
-result = generate_default_device_fingerprint(device_fingerprint, byref(fingerprint_length))
-if not result:
-    print("generateDefaultDeviceFingerprint returned false", file=sys.stderr)
+status = generate_default_device_fingerprint(device_fingerprint, byref(fingerprint_length))
+if status != 0:
+    print(f"generateDefaultDeviceFingerprint failed with status code {status}", file=sys.stderr)
     sys.exit(1)
 
 if fingerprint_length.value < 0 or fingerprint_length.value > MAX_FINGERPRINT_LENGTH:
