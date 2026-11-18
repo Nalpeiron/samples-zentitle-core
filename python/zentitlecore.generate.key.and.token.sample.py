@@ -62,7 +62,9 @@ ACTIVATION_ID = "<INSERT ACTIVATION ID>"         # e.g., "act_01HZYAC4XMVFVGKJ4Z
 # Optional: override the auto-generated timestamp for the deactivation token.
 DEACTIVATION_TOKEN_ISSUE_DATE = ""               # leave blank to use current UTC time
 
-BUFFER_SIZE = 100_000
+# Zentitle2Core.hpp requires 1,000,000 bytes, including the null terminator.
+# The token length parameter is output-only; it does not specify buffer capacity.
+BUFFER_SIZE = 1_000_000
 ACTIVATION_AES_FILE = "aes_key_generated.base64.txt"
 DEACTIVATION_AES_FILE = "aes_key_deactivation.base64.txt"
 FORCE_NEW_ACTIVATION_AES = False
@@ -96,7 +98,7 @@ def call_generate_activation_request_token(payload: dict, aes_key_b64: str, tag:
     payload_json = json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
     out = create_string_buffer(BUFFER_SIZE)
-    n = c_int(BUFFER_SIZE)
+    n = c_int(0)
     status = lib.generateActivationRequestToken(
         out,
         byref(n),
@@ -111,7 +113,11 @@ def call_generate_activation_request_token(payload: dict, aes_key_b64: str, tag:
         print(f"❌ {tag} FAILED with status code {status}. Check the RSA public key and payload.")
         sys.exit(1)
 
-    return out.value.decode("utf-8", "replace")
+    if n.value >= BUFFER_SIZE or out.raw[n.value] != 0:
+        print(f"❌ {tag} returned an invalid token length or missing null terminator.")
+        sys.exit(1)
+
+    return out.raw[:n.value].decode("utf-8", "replace")
 
 def main():
     print("=== Zentitle2Core: Generate AES key -> Generate token ===")

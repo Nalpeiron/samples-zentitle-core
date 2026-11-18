@@ -74,7 +74,9 @@ DEACTIVATION_TOKEN_ISSUE_DATE = ""  # leave blank to auto-fill with current UTC
 AES_KEY_FILE_OUT = "aes_key_deactivation.base64.txt"
 DEACTIVATION_TOKEN_OUT = "offline_deactivation_request_token.txt"
 
-BUFFER_SIZE = 100_000
+# Zentitle2Core.hpp requires 1,000,000 bytes, including the null terminator.
+# The token length parameter is output-only; it does not specify buffer capacity.
+BUFFER_SIZE = 1_000_000
 
 # ---------- Helpers ----------
 def iso8601_utc_now() -> str:
@@ -157,7 +159,7 @@ def main() -> None:
     payload_json = json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
     out = create_string_buffer(BUFFER_SIZE)
-    out_len = c_int(BUFFER_SIZE)
+    out_len = c_int(0)
 
     status = lib.generateActivationRequestToken(
         out,
@@ -172,7 +174,11 @@ def main() -> None:
         print(f"❌ Deactivation FAILED with status code {status}. Check the RSA public key and payload.")
         sys.exit(1)
 
-    token = out.value.decode("utf-8", "replace")
+    if out_len.value >= BUFFER_SIZE or out.raw[out_len.value] != 0:
+        print("❌ Deactivation returned an invalid token length or missing null terminator.")
+        sys.exit(1)
+
+    token = out.raw[:out_len.value].decode("utf-8", "replace")
 
     with open(os.path.join(HERE, AES_KEY_FILE_OUT), "w", encoding="utf-8") as f:
         f.write(aes_key_b64)
